@@ -1,5 +1,10 @@
 = CMake + Qt + SWIG + Vcpkg + Vulkan
 
+Based on:
+* https://github.com/charles-lunarg/vk-bootstrap
+* https://github.com/google/shaderc
+* https://code.qt.io/cgit/qt/qtbase.git/tree/examples/vulkan/hellovulkanwidget
+
 == Building
 
 === Prerequisites
