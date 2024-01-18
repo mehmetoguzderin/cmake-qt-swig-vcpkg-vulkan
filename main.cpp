@@ -1,4 +1,6 @@
 #include "lib.hpp"
+
+#include <fstream>
 #include <iostream>
 
 #include <QApplication>
@@ -18,6 +20,8 @@
 #include <QVulkanWindow>
 #include <QWidget>
 
+#include <shaderc/shaderc.hpp>
+
 class TriangleRenderer : public QVulkanWindowRenderer {
 public:
   TriangleRenderer(QVulkanWindow *w, bool msaa = false);
@@ -30,7 +34,8 @@ public:
   void startNextFrame() override;
 
 protected:
-  VkShaderModule createShader(const QString &name);
+  VkShaderModule createShader(const QString &name,
+                              const shaderc_shader_kind kind);
 
   QVulkanWindow *m_window;
   QVulkanDeviceFunctions *m_devFuncs;
@@ -76,20 +81,38 @@ TriangleRenderer::TriangleRenderer(QVulkanWindow *w, bool msaa) : m_window(w) {
   }
 }
 
-VkShaderModule TriangleRenderer::createShader(const QString &name) {
-  QFile file(name);
-  if (!file.open(QIODevice::ReadOnly)) {
-    qWarning("Failed to read shader %s", qPrintable(name));
-    return VK_NULL_HANDLE;
+std::vector<uint32_t> compile_file(const std::string &source_name,
+                                   shaderc_shader_kind kind) {
+  shaderc::Compiler compiler;
+  shaderc::CompileOptions options;
+
+  options.AddMacroDefinition("MY_DEFINE", "1");
+  options.SetOptimizationLevel(shaderc_optimization_level_performance);
+
+  std::ifstream source_file(source_name);
+  std::string source{std::istreambuf_iterator<char>(source_file),
+                     std::istreambuf_iterator<char>()};
+
+  shaderc::SpvCompilationResult module =
+      compiler.CompileGlslToSpv(source, kind, source_name.c_str(), options);
+
+  if (module.GetCompilationStatus() != shaderc_compilation_status_success) {
+    std::cerr << module.GetErrorMessage();
+    return std::vector<uint32_t>();
   }
-  QByteArray blob = file.readAll();
-  file.close();
+
+  return {module.cbegin(), module.cend()};
+}
+
+VkShaderModule TriangleRenderer::createShader(const QString &name,
+                                              shaderc_shader_kind kind) {
+  auto blob = compile_file(name.toStdString(), kind);
 
   VkShaderModuleCreateInfo shaderInfo;
   memset(&shaderInfo, 0, sizeof(shaderInfo));
   shaderInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-  shaderInfo.codeSize = blob.size();
-  shaderInfo.pCode = reinterpret_cast<const uint32_t *>(blob.constData());
+  shaderInfo.codeSize = blob.size() * sizeof(uint32_t);
+  shaderInfo.pCode = reinterpret_cast<const uint32_t *>(blob.data());
   VkShaderModule shaderModule;
   VkResult err = m_devFuncs->vkCreateShaderModule(
       m_window->device(), &shaderInfo, nullptr, &shaderModule);
@@ -263,9 +286,9 @@ void TriangleRenderer::initResources() {
 
   // Shaders
   VkShaderModule vertShaderModule =
-      createShader(QStringLiteral(":/color_vert.spv"));
+      createShader(QStringLiteral("./main.vert"), shaderc_glsl_vertex_shader);
   VkShaderModule fragShaderModule =
-      createShader(QStringLiteral(":/color_frag.spv"));
+      createShader(QStringLiteral("./main.frag"), shaderc_glsl_fragment_shader);
 
   // Graphics pipeline
   VkGraphicsPipelineCreateInfo pipelineInfo;

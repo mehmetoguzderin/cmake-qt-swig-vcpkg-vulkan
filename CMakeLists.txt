@@ -17,6 +17,8 @@ include_directories(${PYTHON_INCLUDE_PATH})
 find_package(Qt6 CONFIG REQUIRED)
 find_package(Qt6Gui CONFIG REQUIRED)
 find_package(Qt6Widgets CONFIG REQUIRED)
+find_package(unofficial-shaderc CONFIG REQUIRED)
+find_package(Vulkan REQUIRED)
 
 qt_standard_project_setup()
 set(CMAKE_AUTOMOC ON)
@@ -40,4 +42,6 @@ qt_add_executable(MainCxx main.cpp)
 #     MACOSX_BUNDLE TRUE)
 target_link_libraries(MainCxx PRIVATE
     LibCxx
-    Qt::Core Qt::Gui Qt::Widgets)
+    Qt::Core Qt::Gui Qt::Widgets
+    unofficial::shaderc::shaderc
+    Vulkan::Vulkan)
