@@ -4,6 +4,8 @@
 #include <iostream>
 
 #include <QApplication>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFile>
 #include <QFileDialog>
 #include <QLCDNumber>
@@ -14,12 +16,14 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QTabWidget>
+#include <QTextEdit>
 #include <QVBoxLayout>
 #include <QVulkanFunctions>
 #include <QVulkanInstance>
 #include <QVulkanWindow>
 #include <QWidget>
 
+#include <qtmetamacros.h>
 #include <shaderc/shaderc.hpp>
 
 class TriangleRenderer : public QVulkanWindowRenderer {
@@ -506,24 +510,49 @@ void TriangleRenderer::startNextFrame() {
                              // presentation rate
 }
 
+class VulkanRenderer : public TriangleRenderer {
+public:
+  VulkanRenderer(QVulkanWindow *w);
+
+  void initResources() override;
+  void startNextFrame() override;
+  void reinitializeResources();
+};
+
+void VulkanRenderer::reinitializeResources() {
+  releaseResources();
+  initResources();
+}
+
 class VulkanWindow : public QVulkanWindow {
   Q_OBJECT
 
 public:
   QVulkanWindowRenderer *createRenderer() override;
 
+  VulkanRenderer *m_renderer;
+
 signals:
   void vulkanInfoReceived(const QString &text);
   void frameQueued(int colorValue);
+
+public slots:
+  void onReinitializeResources();
 };
+
+void VulkanWindow::onReinitializeResources() {
+  m_renderer->reinitializeResources();
+}
 
 class MainWindow : public QWidget {
   Q_OBJECT
 
 public:
   explicit MainWindow(VulkanWindow *w, QPlainTextEdit *logWidget);
+  void editShaderFile(const QString &filePath);
 
 public slots:
+  void onShaderEditAccepted();
   void onVulkanInfoReceived(const QString &text);
   void onFrameQueued(int colorValue);
   void onGrabRequested();
@@ -533,14 +562,8 @@ private:
   QTabWidget *m_infoTab;
   QPlainTextEdit *m_info;
   QLCDNumber *m_number;
-};
-
-class VulkanRenderer : public TriangleRenderer {
-public:
-  VulkanRenderer(VulkanWindow *w);
-
-  void initResources() override;
-  void startNextFrame() override;
+  QTextEdit *m_shaderEditor;
+  QString m_currentShaderPath;
 };
 
 MainWindow::MainWindow(VulkanWindow *w, QPlainTextEdit *logWidget)
@@ -559,6 +582,20 @@ MainWindow::MainWindow(VulkanWindow *w, QPlainTextEdit *logWidget)
   connect(grabButton, &QPushButton::clicked, this,
           &MainWindow::onGrabRequested);
 
+  QPushButton *editVertShaderButton = new QPushButton(tr("Edit main.vert"));
+  connect(editVertShaderButton, &QPushButton::clicked, this,
+          [this]() { editShaderFile(QStringLiteral("./main.vert")); });
+
+  QPushButton *editFragShaderButton = new QPushButton(tr("Edit main.frag"));
+  connect(editFragShaderButton, &QPushButton::clicked, this,
+          [this]() { editShaderFile(QStringLiteral("./main.frag")); });
+
+  QPushButton *compileButton = new QPushButton(tr("&Compile"));
+  compileButton->setFocusPolicy(Qt::NoFocus);
+
+  connect(compileButton, &QPushButton::clicked, m_window,
+          &VulkanWindow::onReinitializeResources);
+
   QPushButton *quitButton = new QPushButton(tr("&Quit"));
   quitButton->setFocusPolicy(Qt::NoFocus);
 
@@ -572,8 +609,50 @@ MainWindow::MainWindow(VulkanWindow *w, QPlainTextEdit *logWidget)
   layout->addWidget(m_number, 1);
   layout->addWidget(wrapper, 5);
   layout->addWidget(grabButton, 1);
+  layout->addWidget(editVertShaderButton, 1);
+  layout->addWidget(editFragShaderButton, 1);
+  layout->addWidget(compileButton, 1);
   layout->addWidget(quitButton, 1);
   setLayout(layout);
+}
+
+void MainWindow::editShaderFile(const QString &filePath) {
+  QFile file(filePath);
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    return;
+
+  QTextStream in(&file);
+  QString shaderCode = in.readAll();
+  file.close();
+
+  QDialog dialog(this);
+  QVBoxLayout layout(&dialog);
+
+  m_shaderEditor = new QTextEdit;
+  m_shaderEditor->setPlainText(shaderCode);
+  layout.addWidget(m_shaderEditor);
+
+  QDialogButtonBox buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+  connect(&buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+  connect(&buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+  layout.addWidget(&buttonBox);
+
+  m_currentShaderPath = filePath;
+  if (dialog.exec() == QDialog::Accepted) {
+    onShaderEditAccepted();
+  }
+}
+
+void MainWindow::onShaderEditAccepted() {
+  QFile file(m_currentShaderPath);
+  if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    return;
+
+  QTextStream out(&file);
+  out << m_shaderEditor->toPlainText();
+  file.close();
+
+  m_window->onReinitializeResources(); // Trigger recompilation
 }
 
 void MainWindow::onVulkanInfoReceived(const QString &text) {
@@ -605,10 +684,11 @@ void MainWindow::onGrabRequested() {
 }
 
 QVulkanWindowRenderer *VulkanWindow::createRenderer() {
-  return new VulkanRenderer(this);
+  m_renderer = new VulkanRenderer(this);
+  return m_renderer;
 }
 
-VulkanRenderer::VulkanRenderer(VulkanWindow *w) : TriangleRenderer(w) {}
+VulkanRenderer::VulkanRenderer(QVulkanWindow *w) : TriangleRenderer(w) {}
 
 void VulkanRenderer::initResources() {
   TriangleRenderer::initResources();
