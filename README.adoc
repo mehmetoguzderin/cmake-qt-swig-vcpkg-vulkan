@@ -52,5 +52,5 @@ cmake --build ./build --config Release
 === Run
 
 ....
-./build/bin/HelloWorld
+./build/MainCxx
 ....
