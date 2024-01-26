@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
-if(APPLE) # MoltenVK
-    include_directories(/usr/local/include)
+if(APPLE
+    AND "${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin"
+    AND "${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Darwin")
+    include_directories(/usr/local/include) # MoltenVK
+    message(STATUS "Building for VK on macOS for macOS")
 endif()
 set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake")
 project(ProjectCxxPy)
