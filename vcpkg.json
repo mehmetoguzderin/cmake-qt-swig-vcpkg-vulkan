@@ -11,7 +11,7 @@
                 "pcre2",
                 "png",
                 "sql",
-                "sql-sqlite3",
+                "sql-sqlite",
                 "thread",
                 "vulkan",
                 "zstd"
